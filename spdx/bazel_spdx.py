@@ -3,6 +3,8 @@ import hashlib
 import re
 from datetime import datetime
 
+# 哈哈哈
+
 
 class BuilderDocumentConfig:
     def __init__(self):
