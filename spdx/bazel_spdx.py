@@ -3,8 +3,6 @@ import hashlib
 import re
 from datetime import datetime
 
-# 哈哈哈
-
 
 class BuilderDocumentConfig:
     def __init__(self):
@@ -77,7 +75,7 @@ class BuilderPackageConfig:
         # if isMainPackage is True, it means this package has binary rule
         self.isMainPackage = False
 
-        # package's subPackages list
+        # package's subPackages list(BuilderPackageConfig object)
         self.subPackages = []
 
         # package's source files
@@ -165,9 +163,11 @@ def make_all_file_data(filePaths, pkgCfg, timesSeen):
     return bfs
 
 
-def analysis_build_file(path):
-    pkg_cfg = BuilderPackageConfig()
-    print(path)
+def read_build_file(path):
+    """
+    :param path: the build file's path(full path)
+    :return: build file's content as string
+    """
     f = open(path)
     line = f.readline()
     file_str = ""
@@ -177,25 +177,72 @@ def analysis_build_file(path):
             file_str += " "
         line = f.readline()
     f.close()
+    return file_str
+
+
+def analysis_main_build_file(path):
+    """
+    :param path: the build file's path(full path)
+    :return: main build file's BuilderPackageConfig
+    """
+    main_build_pkg_cfg = BuilderPackageConfig()
+    file_str = read_build_file(path)
     print(file_str)
-    pkg_name = re.compile('cc_library\s*\\(\s*name\s*=\s*\\"(.*?)\\"').findall(file_str)
-    pkg_type = "cc_library"
-    if len(pkg_name) == 0:
-        pkg_cfg.isMainPackage = True
-        pkg_name = re.compile('cc_binary\s*\\(\s*name\s*=\s*\\"(.*?)\\"').findall(file_str)  # it's a list
-    pkg_cfg.packageName = pkg_name
-    print(pkg_name)
-    src_file_names = re.compile('cc_library\s*\\(.+srcs\s*=\s*\\["(.*?)"\\]').findall(file_str)
-    print(src_file_names)
+    # first to find cc_binary（cc_binary is only in main build file）
+    pkg_name = re.compile('cc_binary\s*\\(\s*name\s*=\s*\\"(.*?)\\"').findall(file_str)  # list type
+    sub_package_lst = []
+    if len(pkg_name) != 0:
+        main_build_pkg_cfg.isMainPackage = True
+        main_build_pkg_cfg.packageName = pkg_name[0]
+
+        # then analysis all cc_library
+        # cc_libs = re.compile('cc_library\s*\\(\s*name\s*=\s*"(.*?)",').findall(file_str)
+        # print(cc_libs)
+        # print(len(cc_libs))
+        src_file_names_str = re.compile('cc_binary\s*\\(.+srcs\s*=\s*\\[\s*"(.*?)"\s*,?\s*\\]').findall(file_str)[0]
+        src_file_names_lst = src_file_names_str.split(",")
+        for i in range(len(src_file_names_lst)):
+            if src_file_names_lst[i] == '':
+                continue
+            src_file_names_lst[i] = src_file_names_lst[i].lstrip('"')
+            src_file_names_lst[i] = src_file_names_lst[i].rstrip('"')
+            src_file_names_lst[i] = src_file_names_lst[i].lstrip("'")
+            src_file_names_lst[i] = src_file_names_lst[i].rstrip("'")
+        main_build_pkg_cfg.srcs = src_file_names_lst
+        print(src_file_names_lst)
+
+        # analysis subPackages
+        sub_package_str = re.compile('cc_binary\s*\\(.+deps\s*=\s*\\[\s*"(.*?)"\s*,?\s*\\]').findall(file_str)[0]
+        print(sub_package_str)
+        sub_package_lst = sub_package_str.split(",")
+        for i in range(len(sub_package_lst)):
+            if sub_package_lst[i] == '':
+                continue
+            sub_package_lst[i] = sub_package_lst[i].lstrip('"')
+            sub_package_lst[i] = sub_package_lst[i].rstrip('"')
+            sub_package_lst[i] = sub_package_lst[i].lstrip("'")
+            sub_package_lst[i] = sub_package_lst[i].rstrip("'")
+        print(sub_package_lst)
+    return main_build_pkg_cfg,  sub_package_lst
 
 
+def analysis_normal_build_file(pkg_path, pak_name):
+    """
+        :param path: the build file's path(full path)
+        :return: normal file's BuilderPackageConfig(mainly cc_library library)
+    """
+    pkg_cfg = BuilderPackageConfig()
+    pkg_path = os.path.join(pkg_path, "build")
+    print(pkg_path)
+    file_str = read_build_file(pkg_path)
+    print(file_str)
 
 
 def analysis_file_by_scan(src_root_dir, excludes):
     """
         Gathers a list of all paths for all files within src_root_dir or its children.
         Arguments:
-            - src_root_dir: root directory of files being collected
+            - src_root_dir: root directory of files being collected(suppose that we have "workspace" file in this dir)
             - excludes: array of excluded directory names
         Returns: array of paths
     """
@@ -214,8 +261,19 @@ def analysis_file_by_scan(src_root_dir, excludes):
         if head_tail == "BUILD":
             build_file_paths.append(file_path)
     # analysis build file(package)
+    main_build_cfg = BuilderPackageConfig()
+    sub_pkg_name_list = []
     for bf_path in build_file_paths:
-        build_pkg_cfg = analysis_build_file(bf_path)
+        build_pkg_cfg, lst = analysis_main_build_file(bf_path)
+        if build_pkg_cfg.isMainPackage:
+            main_build_cfg = build_pkg_cfg
+            sub_pkg_name_list = lst
+    for pkg_name in sub_pkg_name_list:
+        if pkg_name[:2] == "//":  # if pkg_name starts with "//"
+            # 以固定的格式进行分割
+            pkg_name = pkg_name[2:]
+            sp_lst = pkg_name.split(":")
+            analysis_normal_build_file(os.path.join(src_root_dir, sp_lst[0]), sp_lst[1])
 
 
 def make_document():
@@ -229,8 +287,10 @@ def make_document():
 
 
 if __name__ == "__main__":
-    scan_dir = r"E:\myProjects\test4"
-    spdx_path = r"E:\myProjects"
+    # scan_dir = r"E:\myProjects\test4"
+    scan_dir = r"C:\Users\haock\Desktop\temp\test4"
+    # spdx_path = r"E:\myProjects"
+    spdx_path = r"C:\Users\haock\Desktop\temp"
     spdxPrefix = "https://huawei.com/haoock/"
     excludes = []
     files = analysis_file_by_scan(scan_dir, excludes)
