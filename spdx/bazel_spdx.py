@@ -300,74 +300,6 @@ def analysis_file_by_scan(src_root_dir, excludes=None):
     return main_build_cfg
 
 
-def outputSPDX(doc, spdxPath):
-    """
-    Write SPDX doc, package and files content to disk.
-    Arguments:
-        - doc: BuilderDocument
-        - spdxPath: path to write SPDX content
-    Returns: True on success, False on error.
-    """
-    try:
-        with open(spdxPath, 'w') as f:
-            # write document creation info section
-            f.write(f"""SPDXVersion: SPDX-2.2
-DataLicense: CC0-1.0
-SPDXID: SPDXRef-DOCUMENT
-DocumentName: {doc.documentName}
-DocumentNamespace: {doc.documentNamespace}
-Creator: Tool: bazel-spdx
-Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
-""")
-            # write any external document references
-            for extRef in doc.extRefs:
-                f.write(f"ExternalDocumentRef: {extRef[0]} {extRef[1]} {extRef[2]}:{extRef[3]}\n")
-            f.write(f"\n")
-
-
-            # write subPackage sections
-            for pkg in doc.mainPackage.subPackages:
-                f.write(f"""##### Package: {pkg.name}
-PackageName: {pkg.name}
-SPDXID: {pkg.spdxID}
-PackageDownloadLocation: {pkg.downloadLocation}
-FilesAnalyzed: true
-PackageVerificationCode: {pkg.verificationCode}
-PackageLicenseConcluded: {pkg.licenseConcluded}
-""")
-                for licFromFiles in pkg.licenseInfoFromFiles:
-                    f.write(f"PackageLicenseInfoFromFiles: {licFromFiles}\n")
-                f.write(f"""PackageLicenseDeclared: {pkg.licenseDeclared}
-PackageCopyrightText: NOASSERTION
-Relationship: SPDXRef-DOCUMENT DESCRIBES {pkg.spdxID}
-""")
-
-                # write file sections
-                for bf in pkg.files:
-                    f.write(f"""FileName: {bf.name}
-SPDXID: {bf.spdxID}
-FileChecksum: SHA1: {bf.sha1}
-""")
-                    if bf.sha256 != "":
-                        f.write(f"FileChecksum: SHA256: {bf.sha256}\n")
-                    if bf.md5 != "":
-                        f.write(f"FileChecksum: MD5: {bf.md5}\n")
-                    f.write(f"LicenseConcluded: {bf.licenseConcluded}\n")
-                    if len(bf.licenseInfoInFile) == 0:
-                        f.write(f"LicenseInfoInFile: NONE\n")
-                    else:
-                        for licInfoInFile in bf.licenseInfoInFile:
-                            f.write(f"LicenseInfoInFile: {licInfoInFile}\n")
-                    f.write(f"FileCopyrightText: {bf.copyrightText}\n\n")
-
-            # we're done for now; will do other relationships later
-            return True
-
-    except OSError as e:
-        print(f"Error: Unable to write to {spdxPath}: {str(e)}")
-        return False
-
-
 def getUniqueID(filenameOnly, timesSeen):
     """
     Find an SPDX ID that is unique among others seen so far.
@@ -397,6 +329,7 @@ def getUniqueID(filenameOnly, timesSeen):
     timesSeen[converted] = filenameTimesSeen
     return spdxID
 
+
 def splitExpression(expression):
     """
     Parse a license expression into its constituent identifiers.
@@ -414,6 +347,7 @@ def splitExpression(expression):
     e4 = e3.split(" ")
 
     return sorted(e4)
+
 
 def getHashes(filePath):
     """
@@ -433,6 +367,7 @@ def getHashes(filePath):
         hMD5.update(buf)
 
     return hSHA1.hexdigest(), hSHA256.hexdigest(), hMD5.hexdigest()
+
 
 def parseLineForExpression(line):
     """Return parsed SPDX expression if tag found in line, or None otherwise."""
@@ -504,6 +439,7 @@ def makeFileData(filePath, pkgCfg, timesSeen):
 
     return bf
 
+
 def getPackageLicenses(bfs):
     """
     Extract lists of all concluded and infoInFile licenses seen.
@@ -519,6 +455,7 @@ def getPackageLicenses(bfs):
         for licInfo in bf.licenseInfoInFile:
             licsFromFiles.add(licInfo)
     return (sorted(list(licsConcluded)), sorted(list(licsFromFiles)))
+
 
 def normalizeExpression(licsConcluded):
     """
@@ -545,6 +482,7 @@ def normalizeExpression(licsConcluded):
         else:
             revised.append(lic)
     return " AND ".join(revised)
+
 
 def calculateVerificationCode(bfs):
     """
@@ -582,6 +520,98 @@ def make_pkg_files(pkg):
     pkg.files = bfs
     pkg.verificationCode = calculateVerificationCode(bfs)
     return pkg
+
+# def find_contains_of_main_pkg(main_pkg):
+
+
+def writeSourceRelationShip(f, main_pkg):
+    # first we need to find CONTAINS and CONTAINED_BY relationship
+    # find_contains_of_main_pkg(f, main_pkg)
+    # find_contains_of_sub_pkg(main_pkg.subPackages)
+
+    if len(main_pkg.srcs) != 0:
+
+
+    # then we need to find DEPENDS_ON and DEPENDENCY_OF relationship
+    # then DEPENDENCY_MANIFEST_OF
+
+
+
+def writePackages(f, pkgs):
+    # write subPackage sections
+    for pkg in pkgs:
+        f.write(f"""##### Package: {pkg.name}
+
+PackageName: {pkg.name}
+SPDXID: {pkg.spdxID}
+PackageDownloadLocation: {pkg.downloadLocation}
+FilesAnalyzed: true
+PackageVerificationCode: {pkg.verificationCode}
+PackageLicenseConcluded: {pkg.licenseConcluded}
+""")
+        for licFromFiles in pkg.licenseInfoFromFiles:
+            f.write(f"PackageLicenseInfoFromFiles: {licFromFiles}\n")
+        f.write(f"""PackageLicenseDeclared: {pkg.licenseDeclared}
+PackageCopyrightText: NOASSERTION
+
+Relationship: SPDXRef-DOCUMENT DESCRIBES {pkg.spdxID}
+
+""")
+
+        # write file sections
+        for bf in pkg.files:
+            f.write(f"""FileName: {bf.name}
+SPDXID: {bf.spdxID}
+FileChecksum: SHA1: {bf.sha1}
+""")
+            if bf.sha256 != "":
+                f.write(f"FileChecksum: SHA256: {bf.sha256}\n")
+            if bf.md5 != "":
+                f.write(f"FileChecksum: MD5: {bf.md5}\n")
+            f.write(f"LicenseConcluded: {bf.licenseConcluded}\n")
+            if len(bf.licenseInfoInFile) == 0:
+                f.write(f"LicenseInfoInFile: NONE\n")
+            else:
+                for licInfoInFile in bf.licenseInfoInFile:
+                    f.write(f"LicenseInfoInFile: {licInfoInFile}\n")
+            f.write(f"FileCopyrightText: {bf.copyrightText}\n\n")
+
+
+def outputSPDX(doc, spdxPath):
+    """
+    Write SPDX doc, package and files content to disk.
+    Arguments:
+        - doc: BuilderDocument
+        - spdxPath: path to write SPDX content
+    Returns: True on success, False on error.
+    """
+    try:
+        with open(spdxPath, 'w') as f:
+            # write document creation info section
+            f.write(f"""SPDXVersion: SPDX-2.2
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: {doc.documentName}
+DocumentNamespace: {doc.documentNamespace}
+Creator: Tool: bazel-spdx
+Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
+""")
+            # write any external document references
+            for extRef in doc.extRefs:
+                f.write(f"ExternalDocumentRef: {extRef[0]} {extRef[1]} {extRef[2]}:{extRef[3]}\n")
+            f.write(f"\n")
+
+            # write mainPackage sections
+            main_lst = [doc.mainPackage]
+            writePackages(f, main_lst)
+            # write subPackage sections
+            writePackages(f, doc.mainPackage.subPackages)
+            # writeSourceRelationShip(f, doc.mainPackage)
+            return True
+
+    except OSError as e:
+        print(f"Error: Unable to write to {spdxPath}: {str(e)}")
+        return False
 
 
 def make_bazel_spdx(main_build_cfg, spdx_output_dir, spdx_namespace_prefix):
