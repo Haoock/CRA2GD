@@ -1,3 +1,4 @@
+import copy
 import os
 import hashlib
 import re
@@ -11,7 +12,8 @@ class BuilderDocumentConfig:
         # configs for packages: package root dir => BuilderPackageConfig
         # self.packageConfigs = {}
 
-        # self.mainPackages = []
+        # build file's root dir => BuildFile
+        self.buildFiles = {}
 
 
 class BuilderPackageConfig:
@@ -67,7 +69,7 @@ class BuilderPackageConfig:
         # package's subPackages list(string object)
         self.subPackages = []
 
-        # package's source files
+        # package's source files names list(string Onject)
         self.srcs = []
 
 
@@ -104,6 +106,9 @@ class BuilderFile:
         self.licenseConcluded = "NOASSERTION"
         self.licenseInfoInFile = []
         self.copyrightText = "NOASSERTION"
+        # 写入之后更新为True，用于避免build文件重复写入
+        self.isWrite = False
+
 
 class BuilderDocument:
     def __init__(self, docCfg):
@@ -257,8 +262,6 @@ def analysis_main_build_pkg(path, src_root_dir):
                 pkg_name = pkg_name[1:]
                 new_sub_pkg_name_list.append(os.path.join(main_build_pkg_cfg.scandir, pkg_name))
         main_build_pkg_cfg.subPackages = new_sub_pkg_name_list
-        print(main_build_pkg_cfg.spdxID + "'s subPackage list is:")
-        print(new_sub_pkg_name_list)
 
     return main_build_pkg_cfg
 
@@ -277,7 +280,6 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir):
     # 同一个build文件中会包含多个pkg（每一个cc_library都是一个pkg）
     pkg_cfgs = []
     for pkg_str in pkg_lsts:
-        print(pkg_str)
         pkg_cfg = BuilderPackageConfig()
         pkg_name_lst = re.compile('\s*name\s*=\s*\\"(.*?)\\"').findall(pkg_str)  # list type
         if len(pkg_name_lst) != 0:
@@ -300,7 +302,6 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir):
             hdr_file_names_str = hdr_file_names_str[0]
             hdr_file_names_lst = analysis_file_names_str(hdr_file_names_str)
             src_file_names_lst.extend(hdr_file_names_lst)
-        print(src_file_names_lst)
         pkg_cfg.srcs = src_file_names_lst
 
         # analysis subPackages
@@ -318,8 +319,6 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir):
                 pkg_name = pkg_name[1:]
                 new_sub_pkg_name_list.append(os.path.join(pkg_cfg.scandir, pkg_name))
         pkg_cfg.subPackages = new_sub_pkg_name_list
-        print(pkg_cfg.spdxID + "'s subPackage list is:")
-        print(new_sub_pkg_name_list)
         pkg_cfgs.append(pkg_cfg)
     return pkg_cfgs
 
@@ -348,6 +347,7 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
         head_tail = os.path.split(file_path)[1]
         if head_tail == "BUILD":
             build_file_paths.append(file_path)
+            doc.config.buildFiles[os.path.split(file_path)[0]] = None
 
     # analysis build file(package)
     main_build_cfgs = []
@@ -374,7 +374,6 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
     for normal_pkg_cfg in all_normal_pkg_cfg:
         normal_build_pkg = BuilderPackage(normal_pkg_cfg)
         doc.packages[normal_build_pkg.uniquePkgId] = normal_build_pkg
-
 
     # #
     # # # we then analysis sub_pkgs
@@ -502,7 +501,7 @@ def getExpressionData(filePath, numLines):
     return None
 
 
-def makeFileData(filePath, pkgCfg, timesSeen):
+def makeFileData(filePath, pkgCfg, timesSeen, src_root_dir):
     """
     Scan for expression, get hashes, and fill in data.
     Arguments:
@@ -513,7 +512,7 @@ def makeFileData(filePath, pkgCfg, timesSeen):
     Returns: BuilderFile
     """
     bf = BuilderFile()
-    bf.name = os.path.join(".", os.path.relpath(filePath, pkgCfg.scandir))
+    bf.name = os.path.join(".", os.path.relpath(filePath, src_root_dir))
 
     filenameOnly = os.path.basename(filePath)
     bf.spdxID = getUniqueID(filenameOnly, timesSeen)
@@ -595,14 +594,24 @@ def calculateVerificationCode(bfs):
     return hSHA1.hexdigest()
 
 
-def make_all_pkg_files(all_pkgs, timesSeen):
+def make_all_pkg_files(all_pkgs, timesSeen, src_root_dir, all_build_files):
     for k, pkg in all_pkgs.items():
         # for every package we first need to scan all source files
         bfs = []
-        for file_name in pkg.config.srcs:
+        new_srcs = pkg.config.srcs
+        if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加
+            new_srcs.append("BUILD")
+
+        for file_name in new_srcs:
             p = os.path.join(pkg.config.scandir, file_name)
-            bf = makeFileData(p, pkg.config, timesSeen)
+
+            bf = makeFileData(p, pkg.config, timesSeen, src_root_dir)
             bfs.append(bf)
+
+        if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加
+            all_build_files[pkg.config.scandir] = bfs[-1]  # 将build文件添加到doc中
+            bfs = bfs[:-1]
+
         (licsConcluded, licsFromFiles) = getPackageLicenses(bfs)
 
         if pkg.config.shouldConcludeLicense:
@@ -613,42 +622,59 @@ def make_all_pkg_files(all_pkgs, timesSeen):
     # return pkg
 
 
-def find_contains_of_main_pkg(f, pkg):
-    print(type(pkg))
+def find_contains_of_all_pkg(f, pkgs):
     # main_pkg: BuilderPackage object
-    for src in pkg.files:
-        if os.path.split(src.name)[1] == "build" or os.path.split(src.name)[1] == "BUILD":
-            f.write(f"Relationship: {src.spdxID} DEPENDENCY_MANIFEST_OF {pkg.spdxID}")
-        else:
-            f.write(f"Relationship: {pkg.spdxID} CONTAINS {src.spdxID}")
+    for k, pkg in pkgs.items():
+        for src in pkg.files:
+            if os.path.split(src.name)[1] == "build" or os.path.split(src.name)[1] == "BUILD":
+                f.write(f"Relationship: {src.spdxID} DEPENDENCY_MANIFEST_OF {pkg.spdxID}")
+            else:
+                f.write(f"Relationship: {pkg.spdxID} CONTAINS {src.spdxID}")
+            f.write(f"\n")
+        if len(pkg.config.subPackages) != 0:
+            for sub_pkg in pkg.config.subPackages:
+                f.write(f"Relationship: {sub_pkg.spdxID} DEPENDS_ON {pkg.spdxID}")
+                f.write(f"\n")
+            for sub_pkg in pkg.config.subPackages:
+                f.write(f"Relationship: {pkg.spdxID} DEPENDENCY_OF {sub_pkg.spdxID}")
+                f.write(f"\n")
+
+
+def write_DEPENDENCY_MANIFEST_OF(f, packages, build_files):
+    for _, pkg in packages.items():
+        f.write(f"Relationship: {build_files[pkg.config.scandir].spdxID} DEPENDENCY_MANIFEST_OF {pkg.spdxID}")
         f.write(f"\n")
-    if len(pkg.config.subPackages) != 0:
-        for sub_pkg in pkg.config.subPackages:
-            f.write(f"Relationship: {sub_pkg.spdxID} DEPENDS_ON {pkg.spdxID}")
+
+
+def write_CONTAINS(f, packages):
+    for _, pkg in packages.items():
+        for src in pkg.files:
+            f.write(f"Relationship: {pkg.spdxID} CONTAINS {src.spdxID}")
             f.write(f"\n")
-        for sub_pkg in pkg.config.subPackages:
-            f.write(f"Relationship: {pkg.spdxID} DEPENDENCY_OF {sub_pkg.spdxID}")
+            f.write(f"Relationship: {src.spdxID} CONTAINED_BY {pkg.spdxID}")
             f.write(f"\n")
 
 
+def write_DEPENDS_ON(f, packages):
+    for _, pkg in packages.items():
+        for dep in pkg.config.subPackages:
+            f.write(f"Relationship: {packages[dep].spdxID} DEPENDS_ON {pkg.spdxID}")
+            f.write(f"\n")
+            f.write(f"Relationship: {pkg.spdxID} DEPENDENCY_OF {packages[dep].spdxID}")
+            f.write(f"\n")
 
-def find_contains_of_sub_pkg(f, sub_pkgs):
-    for sub_pkg in sub_pkgs:
-        find_contains_of_main_pkg(f, sub_pkg)
 
-
-def writeSourceRelationShip(f, main_pkg):
+def writeSourceRelationShip(f, packages, build_files):
     # first we need to find CONTAINS and CONTAINED_BY relationship
-    find_contains_of_main_pkg(f, main_pkg)
-    find_contains_of_sub_pkg(f, main_pkg.subPackages)
+    # find_contains_of_all_pkg(f, packages)
+    write_DEPENDENCY_MANIFEST_OF(f, packages, build_files)
 
-    # if len(main_pkg.srcs) != 0:
+    write_CONTAINS(f, packages)
 
-    # then we need to find DEPENDS_ON and DEPENDENCY_OF relationship
-    # then DEPENDENCY_MANIFEST_OF
+    write_DEPENDS_ON(f, packages)
 
 
-def writePackages(f, pkgs):
+def writePackages(f, pkgs, all_build_files):
     # write subPackage sections
     for k, pkg in pkgs.items():
         print(pkg.name)
@@ -669,9 +695,14 @@ PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-DOCUMENT DESCRIBES {pkg.spdxID}
 
 """)
+        new_files = copy.deepcopy(pkg.files)
+        # first check build File
+        if not all_build_files[pkg.config.scandir].isWrite:
+            new_files.append(all_build_files[pkg.config.scandir])
+            all_build_files[pkg.config.scandir].isWrite = True
 
         # write file sections
-        for bf in pkg.files:
+        for bf in new_files:
             f.write(f"""FileName: {bf.name}
 SPDXID: {bf.spdxID}
 FileChecksum: SHA1: {bf.sha1}
@@ -713,11 +744,11 @@ Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
                 f.write(f"ExternalDocumentRef: {extRef[0]} {extRef[1]} {extRef[2]}:{extRef[3]}\n")
             f.write(f"\n")
 
-            # write mainPackage sections
-            writePackages(f, doc.packages)
-            # write subPackage sections
-            # writePackages(f, doc.mainPackage.subPackages)
-            writeSourceRelationShip(f, doc.mainPackage)
+            # write package sections
+            writePackages(f, doc.packages, doc.config.buildFiles)
+
+            # write relationship section
+            writeSourceRelationShip(f, doc.packages, doc.config.buildFiles)
             return True
 
     except OSError as e:
@@ -725,7 +756,7 @@ Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
         return False
 
 
-def make_bazel_spdx(doc, spdx_output_dir):
+def make_bazel_spdx(doc, spdx_output_dir, src_root_dir):
     """
     MAIN FUNCTION
     Parse Cmake data and scan source / build directories, and create a
@@ -743,8 +774,7 @@ def make_bazel_spdx(doc, spdx_output_dir):
     # create SPDX file for sources
     srcSpdxPath = os.path.join(spdx_output_dir, "sources.spdx")
 
-
-    make_all_pkg_files(doc.packages, doc.timesSeen)
+    make_all_pkg_files(doc.packages, doc.timesSeen, src_root_dir, doc.config.buildFiles)
 
     # for sub_pkg_cfg in main_pkg.config.subPackages:
     #     sub_pkg = BuilderPackage(sub_pkg_cfg)
@@ -804,15 +834,15 @@ def make_spdx_from_build_file(workSpace_dir, spdx_output_dir, spdx_namespace):
     doc_cfg = BuilderDocumentConfig()
 
     doc = BuilderDocument(doc_cfg)
-    doc.documentName = "sources"
+    doc.documentName = "sources2"
     doc.documentNamespace = os.path.join(spdx_namespace, "sources")
     analysis_file_by_scan(workSpace_dir, doc)  #
-    return make_bazel_spdx(doc, spdx_output_dir)
+    return make_bazel_spdx(doc, spdx_output_dir, workSpace_dir)
 
 
 if __name__ == "__main__":
     # scan_dir = r"E:\myProjects\test4"
-    scan_dir = r"E:\bazel\test5_c"
+    scan_dir = r"E:\bazel\pj\ramulator"
     # spdx_path = r"E:\myProjects"
     spdx_path = r"E:\bazel"
     spdxPrefix = "https://huawei.com/haoock/"
