@@ -89,7 +89,7 @@ class BuilderPackage:
         self.licenseInfoFromFiles = []
         self.licenseDeclared = pkgCfg.declaredLicense
         self.copyrightText = pkgCfg.copyrightText
-        self.files = []
+        self.files = []  # 这里的files应该要改成是所有File的uniqueid，具体的BuildFile应该要放到doc里面去
 
 
 class BuilderFile:
@@ -106,8 +106,6 @@ class BuilderFile:
         self.licenseConcluded = "NOASSERTION"
         self.licenseInfoInFile = []
         self.copyrightText = "NOASSERTION"
-        # 写入之后更新为True，用于避免build文件重复写入
-        self.isWrite = False
 
 
 class BuilderDocument:
@@ -124,8 +122,12 @@ class BuilderDocument:
         # corresponding document configuration
         self.config = docCfg
 
-        # packages in this document: package root dir => BuilderPackage
+        # all packages in this document: package uniqueId => BuilderPackage
         self.packages = {}
+
+        # all files in this document whether in normal package.
+        # file uniqueId => True ? if file in normal package : false(need in source package)
+        self.files = {}
 
         # all files timeSeen
         self.timesSeen = {}
@@ -210,7 +212,7 @@ def analysis_file_names_str(file_names_str):
     return new_file_name_lst
 
 
-def analysis_main_build_pkg(path, src_root_dir):
+def analysis_main_build_pkg(path, src_root_dir, doc):
     """
     only analysis main_build_file
     param path: the build file's path(full path)
@@ -246,6 +248,13 @@ def analysis_main_build_pkg(path, src_root_dir):
             src_file_names_lst.extend(hdr_file_names_lst)
         main_build_pkg_cfg.srcs = src_file_names_lst
 
+        # 这边将build文件包中的src排除在最后的source包的src文件之外(为了构造最后一个sources包)
+        for src_file in main_build_pkg_cfg.srcs:
+            src_path = os.path.join(main_build_pkg_cfg.scandir, src_file)
+            print("源文件的完整路径名称是：")
+            print(src_path)
+            doc.files[src_path] = True
+
         # analysis subPackages
         sub_pkg_name_list = re.compile('deps\s*=\s*[\[](.*?)[]]').findall(cc_binary_str)
         if len(sub_pkg_name_list) != 0:
@@ -266,7 +275,7 @@ def analysis_main_build_pkg(path, src_root_dir):
     return main_build_pkg_cfg
 
 
-def analysis_normal_build_pkg(pkg_path, src_root_dir):
+def analysis_normal_build_pkg(pkg_path, src_root_dir, doc):
     """
         :param path: the build file's path(full path)
         :return: normal file's BuilderPackageConfig(mainly cc_library library)
@@ -303,6 +312,11 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir):
             hdr_file_names_lst = analysis_file_names_str(hdr_file_names_str)
             src_file_names_lst.extend(hdr_file_names_lst)
         pkg_cfg.srcs = src_file_names_lst
+
+        # 这边将build文件包中的src排除在最后的source包的src文件之外
+        for src_file in pkg_cfg.srcs:
+            src_path = os.path.join(pkg_cfg.scandir, src_file)
+            doc.files[src_path] = True
 
         # analysis subPackages
         sub_pkg_name_list = re.compile('deps\s*=\s*[\[](.*?)[]]').findall(pkg_str)
@@ -344,6 +358,8 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
     # find build file paths
     build_file_paths = []
     for file_path in paths:
+        # 将每一个文件先置为False(一开始每个文件不属于任何一个包)
+        doc.files[file_path] = False
         head_tail = os.path.split(file_path)[1]
         if head_tail == "BUILD":
             build_file_paths.append(file_path)
@@ -354,7 +370,7 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
 
     # analysis all build files that contain binary library.
     for bf_path in build_file_paths:
-        build_pkg_cfg = analysis_main_build_pkg(bf_path, src_root_dir)  # we only analysis main build file(cc_binary)
+        build_pkg_cfg = analysis_main_build_pkg(bf_path, src_root_dir, doc)  # we only analysis main build file(cc_binary)
         if build_pkg_cfg.isMainPackage:
             main_build_cfgs.append(build_pkg_cfg)
 
@@ -367,13 +383,32 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
     # analysis all sub_pkgs and add them to doc
     all_normal_pkg_cfg = []
     for bf_path in build_file_paths:
-        normal_pkgs = analysis_normal_build_pkg(bf_path, src_root_dir)  # we only analysis sub build file(cc_library)
+        normal_pkgs = analysis_normal_build_pkg(bf_path, src_root_dir, doc)  # we only analysis sub build file(cc_library)
         all_normal_pkg_cfg.extend(normal_pkgs)
 
     # add all sub_pkgs and add them to doc
     for normal_pkg_cfg in all_normal_pkg_cfg:
         normal_build_pkg = BuilderPackage(normal_pkg_cfg)
         doc.packages[normal_build_pkg.uniquePkgId] = normal_build_pkg
+
+    # 最后还需要添加一个不包含在任何一个build File里面的package里面的包
+    src_file_names_lst = []
+    for file_path, isTrue in doc.files.items():
+        if not isTrue:
+            src_file_names_lst.append(os.path.relpath(file_path, src_root_dir))
+    if len(src_file_names_lst) != 0:
+        source_pkg_cfg = BuilderPackageConfig()
+        source_pkg_cfg.packageName = "sources"
+        source_pkg_cfg.spdxID = "SPDXRef-sources"
+
+        source_pkg_cfg.doSHA256 = True
+        source_pkg_cfg.scandir = src_root_dir
+        source_pkg_cfg.srcs = src_file_names_lst
+        source_pkg = BuilderPackage(source_pkg_cfg)
+        source_pkg.uniquePkgId = "Sources"
+        doc.packages[source_pkg.uniquePkgId] = source_pkg
+
+
 
     # #
     # # # we then analysis sub_pkgs
@@ -599,18 +634,23 @@ def make_all_pkg_files(all_pkgs, timesSeen, src_root_dir, all_build_files):
         # for every package we first need to scan all source files
         bfs = []
         new_srcs = pkg.config.srcs
-        if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加
-            new_srcs.append("BUILD")
+        if pkg.config.packageName != "sources":
+            if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加（一个文件夹下不可能有两个build文件）
+                new_srcs.append("BUILD")
 
         for file_name in new_srcs:
-            p = os.path.join(pkg.config.scandir, file_name)
+            file_name_only = os.path.split(file_name)[1]
+            if file_name_only == "BUILD" and pkg.config.packageName == "sources" and all_build_files[os.path.join(pkg.config.scandir, os.path.split(file_name)[0])] is not None: # ，因此直接在all_build_files里面取
+                bfs.append(all_build_files[os.path.join(pkg.config.scandir, os.path.split(file_name)[0])])
+            else:
+                p = os.path.join(pkg.config.scandir, file_name)
+                bf = makeFileData(p, pkg.config, timesSeen, src_root_dir)
+                bfs.append(bf)
 
-            bf = makeFileData(p, pkg.config, timesSeen, src_root_dir)
-            bfs.append(bf)
-
-        if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加
-            all_build_files[pkg.config.scandir] = bfs[-1]  # 将build文件添加到doc中
-            bfs = bfs[:-1]
+        if pkg.config.packageName != "sources":
+            if all_build_files[pkg.config.scandir] is None:  # 说明当前build文件还未添加
+                all_build_files[pkg.config.scandir] = bfs[-1]  # 将build文件添加到doc中
+                bfs = bfs[:-1]
 
         (licsConcluded, licsFromFiles) = getPackageLicenses(bfs)
 
@@ -642,8 +682,9 @@ def find_contains_of_all_pkg(f, pkgs):
 
 def write_DEPENDENCY_MANIFEST_OF(f, packages, build_files):
     for _, pkg in packages.items():
-        f.write(f"Relationship: {build_files[pkg.config.scandir].spdxID} DEPENDENCY_MANIFEST_OF {pkg.spdxID}")
-        f.write(f"\n")
+        if pkg.config.packageName != "sources":
+            f.write(f"Relationship: {build_files[pkg.config.scandir].spdxID} DEPENDENCY_MANIFEST_OF {pkg.spdxID}")
+            f.write(f"\n")
 
 
 def write_CONTAINS(f, packages):
@@ -657,11 +698,12 @@ def write_CONTAINS(f, packages):
 
 def write_DEPENDS_ON(f, packages):
     for _, pkg in packages.items():
-        for dep in pkg.config.subPackages:
-            f.write(f"Relationship: {packages[dep].spdxID} DEPENDS_ON {pkg.spdxID}")
-            f.write(f"\n")
-            f.write(f"Relationship: {pkg.spdxID} DEPENDENCY_OF {packages[dep].spdxID}")
-            f.write(f"\n")
+        if pkg.config.packageName != "sources":
+            for dep in pkg.config.subPackages:
+                f.write(f"Relationship: {packages[dep].spdxID} DEPENDS_ON {pkg.spdxID}")
+                f.write(f"\n")
+                f.write(f"Relationship: {pkg.spdxID} DEPENDENCY_OF {packages[dep].spdxID}")
+                f.write(f"\n")
 
 
 def writeSourceRelationShip(f, packages, build_files):
@@ -695,14 +737,9 @@ PackageCopyrightText: NOASSERTION
 Relationship: SPDXRef-DOCUMENT DESCRIBES {pkg.spdxID}
 
 """)
-        new_files = copy.deepcopy(pkg.files)
-        # first check build File
-        if not all_build_files[pkg.config.scandir].isWrite:
-            new_files.append(all_build_files[pkg.config.scandir])
-            all_build_files[pkg.config.scandir].isWrite = True
 
         # write file sections
-        for bf in new_files:
+        for bf in pkg.files:
             f.write(f"""FileName: {bf.name}
 SPDXID: {bf.spdxID}
 FileChecksum: SHA1: {bf.sha1}
@@ -842,7 +879,7 @@ def make_spdx_from_build_file(workSpace_dir, spdx_output_dir, spdx_namespace):
 
 if __name__ == "__main__":
     # scan_dir = r"E:\myProjects\test4"
-    scan_dir = r"E:\bazel\pj\ramulator"
+    scan_dir = r"E:\bazel\pj"
     # spdx_path = r"E:\myProjects"
     spdx_path = r"E:\bazel"
     spdxPrefix = "https://huawei.com/haoock/"
