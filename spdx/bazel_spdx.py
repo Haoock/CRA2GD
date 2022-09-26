@@ -212,6 +212,33 @@ def analysis_file_names_str(file_names_str):
     return new_file_name_lst
 
 
+def analysis_dep_relationship(str, src_root_dir, pkg_cfg):
+    sub_pkg_name_list = re.compile('deps\s*=\s*[\[](.*?)[]]').findall(str)
+    if len(sub_pkg_name_list) != 0:
+        sub_package_str = sub_pkg_name_list[0]
+        sub_pkg_name_list = analysis_file_names_str(sub_package_str)
+
+    new_sub_pkg_name_list = []
+    for pkg_name in sub_pkg_name_list:
+        if pkg_name[:2] == "//":  # if pkg_name starts with "//"
+            pkg_name = pkg_name[2:]
+            sp_lst = pkg_name.split(":")
+            new_sub_pkg_name_list.append(os.path.join(src_root_dir, sp_lst[0], sp_lst[1]))
+        elif pkg_name[:1] == ":":
+            pkg_name = pkg_name[1:]
+            new_sub_pkg_name_list.append(os.path.join(pkg_cfg.scandir, pkg_name))
+    pkg_cfg.subPackages = new_sub_pkg_name_list
+
+
+def analysis_hdr_relationship(str, src_file_names_lst):
+    hdr_file_names_str = re.compile('hdrs\s*=\s*[\[](.*?)[]]').findall(str)
+    if len(hdr_file_names_str) != 0:
+        hdr_file_names_str = hdr_file_names_str[0]
+        hdr_file_names_lst = analysis_file_names_str(hdr_file_names_str)
+        src_file_names_lst.extend(hdr_file_names_lst)
+    return src_file_names_lst
+
+
 def analysis_main_build_pkg(path, src_root_dir, doc):
     """
     only analysis main_build_file
@@ -241,12 +268,7 @@ def analysis_main_build_pkg(path, src_root_dir, doc):
         else:
             print("Info: main_file's srcs does not exist!")
         src_file_names_lst = analysis_file_names_str(src_file_names_str)
-        hdr_file_names_str = re.compile('hdrs\s*=\s*[\[](.*?)[]]').findall(cc_binary_str)
-        if len(hdr_file_names_str) != 0:
-            hdr_file_names_str = hdr_file_names_str[0]
-            hdr_file_names_lst = analysis_file_names_str(hdr_file_names_str)
-            src_file_names_lst.extend(hdr_file_names_lst)
-        main_build_pkg_cfg.srcs = src_file_names_lst
+        main_build_pkg_cfg.srcs = analysis_hdr_relationship(cc_binary_str, src_file_names_lst)
 
         # 这边将build文件包中的src排除在最后的source包的src文件之外(为了构造最后一个sources包)
         for src_file in main_build_pkg_cfg.srcs:
@@ -256,21 +278,7 @@ def analysis_main_build_pkg(path, src_root_dir, doc):
             doc.files[src_path] = True
 
         # analysis subPackages
-        sub_pkg_name_list = re.compile('deps\s*=\s*[\[](.*?)[]]').findall(cc_binary_str)
-        if len(sub_pkg_name_list) != 0:
-            sub_package_str = sub_pkg_name_list[0]
-            sub_pkg_name_list = analysis_file_names_str(sub_package_str)
-
-        new_sub_pkg_name_list = []
-        for pkg_name in sub_pkg_name_list:
-            if pkg_name[:2] == "//":  # if pkg_name starts with "//"
-                pkg_name = pkg_name[2:]
-                sp_lst = pkg_name.split(":")
-                new_sub_pkg_name_list.append(os.path.join(src_root_dir, sp_lst[0], sp_lst[1]))
-            elif pkg_name[:1] == ":":
-                pkg_name = pkg_name[1:]
-                new_sub_pkg_name_list.append(os.path.join(main_build_pkg_cfg.scandir, pkg_name))
-        main_build_pkg_cfg.subPackages = new_sub_pkg_name_list
+        analysis_dep_relationship(cc_binary_str, src_root_dir, main_build_pkg_cfg)
 
     return main_build_pkg_cfg
 
@@ -306,12 +314,7 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir, doc):
         else:
             print("Info: sub_file's srcs does not exist!")
         src_file_names_lst = analysis_file_names_str(src_file_names_str)
-        hdr_file_names_str = re.compile('hdrs\s*=\s*[\[](.*?)[]]').findall(pkg_str)
-        if len(hdr_file_names_str) != 0:
-            hdr_file_names_str = hdr_file_names_str[0]
-            hdr_file_names_lst = analysis_file_names_str(hdr_file_names_str)
-            src_file_names_lst.extend(hdr_file_names_lst)
-        pkg_cfg.srcs = src_file_names_lst
+        pkg_cfg.srcs = analysis_hdr_relationship(pkg_str, src_file_names_lst)
 
         # 这边将build文件包中的src排除在最后的source包的src文件之外
         for src_file in pkg_cfg.srcs:
@@ -319,20 +322,7 @@ def analysis_normal_build_pkg(pkg_path, src_root_dir, doc):
             doc.files[src_path] = True
 
         # analysis subPackages
-        sub_pkg_name_list = re.compile('deps\s*=\s*[\[](.*?)[]]').findall(pkg_str)
-        if len(sub_pkg_name_list) != 0:
-            sub_package_str = sub_pkg_name_list[0]
-            sub_pkg_name_list = analysis_file_names_str(sub_package_str)
-        new_sub_pkg_name_list = []
-        for pkg_name in sub_pkg_name_list:
-            if pkg_name[:2] == "//":  # if pkg_name starts with "//"
-                pkg_name = pkg_name[2:]
-                sp_lst = pkg_name.split(":")
-                new_sub_pkg_name_list.append(os.path.join(src_root_dir, sp_lst[0], sp_lst[1]))
-            elif pkg_name[:1] == ":":
-                pkg_name = pkg_name[1:]
-                new_sub_pkg_name_list.append(os.path.join(pkg_cfg.scandir, pkg_name))
-        pkg_cfg.subPackages = new_sub_pkg_name_list
+        analysis_dep_relationship(pkg_str, src_root_dir, pkg_cfg)
         pkg_cfgs.append(pkg_cfg)
     return pkg_cfgs
 
@@ -370,7 +360,8 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
 
     # analysis all build files that contain binary library.
     for bf_path in build_file_paths:
-        build_pkg_cfg = analysis_main_build_pkg(bf_path, src_root_dir, doc)  # we only analysis main build file(cc_binary)
+        build_pkg_cfg = analysis_main_build_pkg(bf_path, src_root_dir, doc)
+        # we only analysis main build file(cc_binary)
         if build_pkg_cfg.isMainPackage:
             main_build_cfgs.append(build_pkg_cfg)
 
@@ -383,7 +374,8 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
     # analysis all sub_pkgs and add them to doc
     all_normal_pkg_cfg = []
     for bf_path in build_file_paths:
-        normal_pkgs = analysis_normal_build_pkg(bf_path, src_root_dir, doc)  # we only analysis sub build file(cc_library)
+        normal_pkgs = analysis_normal_build_pkg(bf_path, src_root_dir, doc)
+        # we only analysis sub build file(cc_library)
         all_normal_pkg_cfg.extend(normal_pkgs)
 
     # add all sub_pkgs and add them to doc
@@ -391,7 +383,7 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
         normal_build_pkg = BuilderPackage(normal_pkg_cfg)
         doc.packages[normal_build_pkg.uniquePkgId] = normal_build_pkg
 
-    # 最后还需要添加一个不包含在任何一个build File里面的package里面的包
+    # 最后还需要添加一个不包含在任何一个build File里面的package的文件的包
     src_file_names_lst = []
     for file_path, isTrue in doc.files.items():
         if not isTrue:
@@ -407,24 +399,6 @@ def analysis_file_by_scan(src_root_dir, doc, excludes=None):
         source_pkg = BuilderPackage(source_pkg_cfg)
         source_pkg.uniquePkgId = "Sources"
         doc.packages[source_pkg.uniquePkgId] = source_pkg
-
-
-
-    # #
-    # # # we then analysis sub_pkgs
-    # for pkg_name in sub_pkg_name_list:
-    #     if pkg_name[:2] == "//":  # if pkg_name starts with "//"
-    #         # 以固定的格式进行分割
-    #         pkg_name = pkg_name[2:]
-    #         sp_lst = pkg_name.split(":")
-    #         sub_pkg_objs = analysis_normal_build_file(os.path.join(src_root_dir, sp_lst[0]), sp_lst[1])
-    #         main_build_cfg.subPackages.extend(sub_pkg_objs)
-    #     elif pkg_name[:1] == ":":
-    #         pkg_name = pkg_name[1:]
-    #         sub_pkg_objs = analysis_normal_build_file(main_build_cfg.scandir, pkg_name)
-    #         main_build_cfg.subPackages.extend(sub_pkg_objs)
-    #
-    # return main_build_cfg
 
 
 def getUniqueID(filenameOnly, timesSeen):
@@ -640,7 +614,8 @@ def make_all_pkg_files(all_pkgs, timesSeen, src_root_dir, all_build_files):
 
         for file_name in new_srcs:
             file_name_only = os.path.split(file_name)[1]
-            if file_name_only == "BUILD" and pkg.config.packageName == "sources" and all_build_files[os.path.join(pkg.config.scandir, os.path.split(file_name)[0])] is not None: # ，因此直接在all_build_files里面取
+            if file_name_only == "BUILD" and pkg.config.packageName == "sources" and all_build_files[
+                os.path.join(pkg.config.scandir, os.path.split(file_name)[0])] is not None:  # ，因此直接在all_build_files里面取
                 bfs.append(all_build_files[os.path.join(pkg.config.scandir, os.path.split(file_name)[0])])
             else:
                 p = os.path.join(pkg.config.scandir, file_name)
@@ -757,7 +732,7 @@ FileChecksum: SHA1: {bf.sha1}
             f.write(f"FileCopyrightText: {bf.copyrightText}\n\n")
 
 
-def outputSPDX(doc, spdxPath):
+def output_spdx(doc, spdxPath):
     """
     Write SPDX doc, package and files content to disk.
     Arguments:
@@ -796,96 +771,39 @@ Created: {datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")}
 def make_bazel_spdx(doc, spdx_output_dir, src_root_dir):
     """
     MAIN FUNCTION
-    Parse Cmake data and scan source / build directories, and create a
-    corresponding SPDX tag-value document.
     Arguments:
-        - srcRootDirs: mapping of package SPDX ID (without "SPDXRef-") =>
-                       sources root dir
-        - spdxOutputDir: output directory where SPDX documents will be written
-        - spdxNamespacePrefix: prefix for SPDX Document Namespace (will have
-            "sources" and "build" appended); see Document Creation Info
-            section in SPDX spec for more information
+
     Returns: True on success, False on failure; note that failure may still
              produce one or more partial SPDX documents
     """
     # create SPDX file for sources
-    srcSpdxPath = os.path.join(spdx_output_dir, "sources.spdx")
+    src_spdx_path = os.path.join(spdx_output_dir, "sources.spdx")
 
     make_all_pkg_files(doc.packages, doc.timesSeen, src_root_dir, doc.config.buildFiles)
 
-    # for sub_pkg_cfg in main_pkg.config.subPackages:
-    #     sub_pkg = BuilderPackage(sub_pkg_cfg)
-    #     sub_pkg = make_pkg_files(sub_pkg)
-    #     main_pkg.subPackages.append(sub_pkg)
-    #
-    # srcDocCfg.mainPackage = main_pkg
-    #
-    srcDoc = outputSPDX(doc, srcSpdxPath)
-    #
-    # if srcDoc:
-    #     print(f"Saved sources SPDX to {srcSpdxPath}")
-    # else:
-    #     print(f"Couldn't generate sources SPDX file")
-    #     return False
-
-    # # get hash of sources SPDX file, to use for build doc's extRef
-    # hSHA256 = hashlib.sha256()
-    # with open(srcSpdxPath, 'rb') as f:
-    #     buf = f.read()
-    #     hSHA256.update(buf)
-    # srcSHA256 = hSHA256.hexdigest()
-    #
-    # # create SPDX file for build
-    # buildSpdxPath = os.path.join(spdx_output_dir, "build.spdx")
-    # buildDocCfg = BuilderDocumentConfig()
-    # buildDocCfg.documentName = "build"
-    # buildDocCfg.documentNamespace = os.path.join(spdx_namespace_prefix, "build")
-    #
-    # buildPkgCfg = BuilderPackageConfig()
-    # buildPkgCfg.packageName = "build"
-    # buildPkgCfg.spdxID = "SPDXRef-build"
-    # buildPkgCfg.doSHA256 = True
-    # buildPkgCfg.scandir = cm.paths_build
-    # buildDocCfg.packageConfigs[cm.paths_build] = buildPkgCfg
-    #
-    # # add external document ref to sources SPDX file
-    # buildDocCfg.extRefs = [("DocumentRef-sources", srcDocCfg.documentNamespace, "SHA256", srcSHA256)]
-    #
-    # # exclude CMake file-based API responses -- presume only used for this
-    # # SPDX generation scan, not for actual build artifact
-    # buildExcludeDir = os.path.join(cm.paths_build, ".cmake", "api")
-    # buildPkgCfg.excludeDirs.append(buildExcludeDir)
-    #
-    # buildDoc = makeSPDX(buildDocCfg, buildSpdxPath)
-    # if buildDoc:
-    #     print(f"Saved build SPDX to {buildSpdxPath}")
-    # else:
-    #     print(f"Couldn't generate build SPDX file")
-    #     return False
-
+    src_doc = output_spdx(doc, src_spdx_path)
+    if src_doc:
+        print(f"Saved sources SPDX to {src_spdx_path}")
+    else:
+        print(f"Couldn't generate sources SPDX file")
+        return False
     return True
 
 
-def make_spdx_from_build_file(workSpace_dir, spdx_output_dir, spdx_namespace):
+def make_spdx_from_build_file(work_space_dir, spdx_output_dir, spdx_namespace):
     # start to create BuilderDocumentConfig
     doc_cfg = BuilderDocumentConfig()
-
     doc = BuilderDocument(doc_cfg)
-    doc.documentName = "sources2"
+    doc.documentName = "sources"
     doc.documentNamespace = os.path.join(spdx_namespace, "sources")
-    analysis_file_by_scan(workSpace_dir, doc)  #
-    return make_bazel_spdx(doc, spdx_output_dir, workSpace_dir)
+    analysis_file_by_scan(work_space_dir, doc)  # 分析所有的文件，并将文件关系信息存储在doc中。
+    return make_bazel_spdx(doc, spdx_output_dir, work_space_dir)  # 输出spdx文件
 
 
 if __name__ == "__main__":
     # scan_dir = r"E:\myProjects\test4"
-    scan_dir = r"E:\bazel\pj"
+    scan_dir = r"F:\lhh\bazel\ramulator_bazel"
     # spdx_path = r"E:\myProjects"
-    spdx_path = r"E:\bazel"
+    spdx_path = r"F:\lhh\bazel"
     spdxPrefix = "https://huawei.com/haoock/"
     make_spdx_from_build_file(scan_dir, spdx_path, spdxPrefix)
-    # srcRootDirs = {}
-    # pkgID = convertToSPDXIDSafe("")
-    # srcRootDirs[pkgID] = scan_dir
-    # res = makeFinalSpdx(srcRootDirs, spdx_path, spdxPrefix)
-    # print(res)
