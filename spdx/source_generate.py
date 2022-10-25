@@ -521,7 +521,6 @@ def makeSPDX(docCfg, spdxPath):
     else:
         return None
 
-
 def makeFinalSpdx(srcRootDirs, spdxOutputDir, spdxNamespacePrefix):
     """
     MAIN FUNCTION
