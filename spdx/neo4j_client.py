@@ -45,6 +45,34 @@ class Neo4j_Client_Driver:
     def __create_include_relationship(self, tx, id1, id2):
         tx.run("match(a) where id(a) = $id1 match(b) where id(b) = $id2 create (a) -[:include]->(b);", id1 = id1, id2 = id2)
 
+
+    def __create_import_relationship(self, tx, id1, id2):
+        tx.run("match(a) where id(a) = $id1 match(b) where id(b) = $id2 create (a) -[:import]->(b);", id1 = id1, id2 = id2)
+
+
+    def __create_third_party_relationship(self, tx, id1, name):
+        tx.run("match(a:JavaFile),(b:ThirdParty) where id(a) = $id1 and b.name = $name create (a) -[:import_third_party]->(b);", id1 = id1, name=name)
+
+
+    def __create_same_package_relationship(self, tx, id1, id2):
+        tx.run("match(a) where id(a) = $id1 match(b) where id(b) = $id2 create (a) -[:same_package]->(b);", id1 = id1, id2 = id2)
+
+
+    def create_import_edge(self, id1, id2):
+        with self.driver.session() as session:
+            session.write_transaction(self.__create_import_relationship, id1, id2)
+
+
+    def create_third_party_edge(self, id1, name):
+        with self.driver.session() as session:
+            session.write_transaction(self.__create_third_party_relationship, id1, name)
+
+
+    def create_same_package_edge(self, id1, id2):
+        with self.driver.session() as session:
+            session.write_transaction(self.__create_same_package_relationship, id1, id2)
+
+
     def create_edge(self, id1, id2):
         with self.driver.session() as session:
             session.execute_write(self.__create_include_relationship, id1, id2)
@@ -62,6 +90,28 @@ class Neo4j_Client_Driver:
 
     def close(self):
         self.driver.close()
+
+    def __create_import_node(self, tx, name, full_path):
+        result = tx.run("CREATE (n:JavaFile {file_name: $name, full_path: $full_path}) return id(n) as node_id", name=name, full_path=full_path)
+        record = result.single()
+        return record["node_id"]
+
+    def __create_third_party_node(self, tx, name):
+        result = tx.run("CREATE (n:ThirdParty {name: $name}) return id(n) as node_id", name=name)
+        record = result.single()
+        return record["node_id"]
+
+    def create_import_node(self, name, full_path):
+        with self.driver.session() as session:
+            node_id = session.write_transaction(self.__create_import_node, name, full_path)
+        return node_id
+
+    def create_third_party_node(self, name):
+        with self.driver.session() as session:
+            node_id = session.write_transaction(self.__create_third_party_node, name)
+        return node_id
+
+
         
 
     def run(self, cypher):
@@ -75,15 +125,14 @@ class Neo4j_Client_Driver:
         """
         with self.driver.session() as session:
             # return session.run(cypher)
-            return session.execute_read(self.__run_cypher, cypher)
+            return session.read_transaction(self.__run_cypher, cypher)
 
 if __name__ == "__main__":
     neo4j_obj = Neo4j_Client_Driver()
-    neo4j_obj.connect("bolt://localhost:7687", "neo4j", "1234")
-    neo4j_obj.clear_db()
+    neo4j_obj.connect("bolt://localhost:7687", "neo4j", "dudu990911")
+    # neo4j_obj.clear_db()
     # node_id1 = neo4j_obj.create_node("bserv.hpp", "bser/main/test", True)
     # node_id2 = neo4j_obj.create_node("bserv.cpp", "bser/main/test", True)
     # neo4j_obj.create_edge(node_id1, node_id2)
     
-    lst = neo4j_obj.run("match (n) return n;")
-    print(lst)
+    neo4j_obj.run("match (a)-[r:same_package]->(b) DELETE r")
