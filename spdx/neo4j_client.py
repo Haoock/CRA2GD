@@ -1,4 +1,3 @@
-
 from select import select
 from neo4j import GraphDatabase
 
@@ -7,7 +6,7 @@ class Neo4j_Client_Driver:
     def __init__(self):
         self.driver = None
 
-    def connect(self, host, user, password, encrypted = False):
+    def connect(self, host="bolt://localhost:7687", user="neo4j", password="1234", encrypted=False):
         try:
             neo4j_host = host
             neo4j_user = user
@@ -23,16 +22,17 @@ class Neo4j_Client_Driver:
 
     # 创建用户自定义的文件节点
     def __create_user_file_node(self, tx, name, full_path):
-        result = tx.run("CREATE (n:UserFile {file_name: $name, full_path: $full_path}) return id(n) as node_id", name=name, full_path=full_path)
+        result = tx.run("CREATE (n:UserFile {file_name: $name, full_path: $full_path}) return id(n) as node_id",
+                        name=name, full_path=full_path)
         record = result.single()
         return record["node_id"]
 
     # 创建系统文件
     def __create_sys_file_node(self, tx, name, full_path):
-        result = tx.run("CREATE (n:SysFile {file_name: $name, full_path: $full_path}) return id(n) as node_id", name=name, full_path=full_path)
+        result = tx.run("CREATE (n:SysFile {file_name: $name, full_path: $full_path}) return id(n) as node_id",
+                        name=name, full_path=full_path)
         record = result.single()
         return record["node_id"]
-
 
     def create_node(self, name, full_path, is_user_file):
         with self.driver.session() as session:
@@ -43,14 +43,14 @@ class Neo4j_Client_Driver:
         return node_id
 
     def __create_include_relationship(self, tx, id1, id2):
-        tx.run("match(a) where id(a) = $id1 match(b) where id(b) = $id2 create (a) -[:include]->(b);", id1 = id1, id2 = id2)
+        tx.run("match(a) where id(a) = $id1 match(b) where id(b) = $id2 create (a) -[:include]->(b);", id1=id1, id2=id2)
 
     def create_edge(self, id1, id2):
         with self.driver.session() as session:
             session.execute_write(self.__create_include_relationship, id1, id2)
 
     def __run_cypher(self, tx, cypher):
-        result = tx.run(cypher) # 这是一个StatementResult对象
+        result = tx.run(cypher)  # 这是一个StatementResult对象
         lst = []
         # print(type(result))
         for record in result:  # 实际上它是由Record对象组成的集合
@@ -62,7 +62,6 @@ class Neo4j_Client_Driver:
 
     def close(self):
         self.driver.close()
-        
 
     def run(self, cypher):
         """
@@ -77,6 +76,7 @@ class Neo4j_Client_Driver:
             # return session.run(cypher)
             return session.execute_read(self.__run_cypher, cypher)
 
+
 if __name__ == "__main__":
     neo4j_obj = Neo4j_Client_Driver()
     neo4j_obj.connect("bolt://localhost:7687", "neo4j", "1234")
@@ -84,6 +84,6 @@ if __name__ == "__main__":
     # node_id1 = neo4j_obj.create_node("bserv.hpp", "bser/main/test", True)
     # node_id2 = neo4j_obj.create_node("bserv.cpp", "bser/main/test", True)
     # neo4j_obj.create_edge(node_id1, node_id2)
-    
+
     lst = neo4j_obj.run("match (n) return n;")
     print(lst)
