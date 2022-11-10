@@ -14,7 +14,7 @@ class Neo4j_Client_Driver:
             neo4j_encrypted = encrypted
             self.driver = GraphDatabase.driver(neo4j_host, auth=(neo4j_user, neo4j_passport), encrypted=neo4j_encrypted)
         except Exception:
-            print("Neo4j连接失败")
+            print("Neo4j connect failed")
 
     def clear_db(self):
         with self.driver.session() as session:
@@ -27,7 +27,6 @@ class Neo4j_Client_Driver:
         record = result.single()
         return record["node_id"]
 
-    # 创建系统文件
     def __create_sys_file_node(self, tx, name, full_path):
         result = tx.run("CREATE (n:SysFile {file_name: $name, full_path: $full_path}) return id(n) as node_id",
                         name=name, full_path=full_path)
@@ -50,13 +49,13 @@ class Neo4j_Client_Driver:
             session.execute_write(self.__create_include_relationship, id1, id2)
 
     def __run_cypher(self, tx, cypher):
-        result = tx.run(cypher)  # 这是一个StatementResult对象
+        result = tx.run(cypher)  # StatementResult obj
         lst = []
         # print(type(result))
-        for record in result:  # 实际上它是由Record对象组成的集合
-            # print(record)  # 这是每一条结果
-            # print(record.keys())  # 返回record中所有可以使用的关键字
-            # print(record.get('n'))  # 使用关键字来获取record中的值
+        for record in result:  # Record obj
+            # print(record)
+            # print(record.keys())
+            # print(record.get('n'))
             lst.append(record)
         return lst
 
@@ -65,12 +64,12 @@ class Neo4j_Client_Driver:
 
     def run(self, cypher):
         """
-        专门用于Match查询语句的执行
+        find results in match
         Args:
-            cypher: cypher语句
+            cypher: cypher phrases
 
         Returns:
-            返回StatementResult和Record
+            StatementResult and Record
         """
         with self.driver.session() as session:
             # return session.run(cypher)

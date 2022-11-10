@@ -3,7 +3,6 @@ import time
 import threading
 from nebula3.gclient.net import ConnectionPool
 from nebula3.Config import Config
-from FormatResp import print_resp
 
 
 class NebulaClientDriver:
@@ -40,6 +39,7 @@ class NebulaClientDriver:
                 nebula_client.execute(
                     'INSERT VERTEX {}(full_path) VALUES '.format(v_type) + data
                 )
+            nebula_client.release()
 
         except Exception as x:
             print(x)
@@ -61,6 +61,7 @@ class NebulaClientDriver:
                 nebula_client.execute(
                     'INSERT EDGE Contain() VALUES ' + data
                 )
+            nebula_client.release()
 
         except Exception as x:
             print(x)
@@ -72,9 +73,37 @@ class NebulaClientDriver:
         # close connect pool
         self.connection_pool.close()
 
+    def find_node(self, vid):
+        # find node by vid
+        try:
+            nebula_client = self.connection_pool.get_session(self.user_name, self.password)
+            assert nebula_client is not None
+            nebula_client.execute('USE {}'.format(self.space_name))
+            query_resp = nebula_client.execute(
+                'match(v) where id(v) == "{}" return v;'.format(vid)
+            )
+            if not query_resp.is_succeeded():
+                print('Execute failed: %s' % query_resp.error_msg())
+                exit(1)
+            nebula_client.release()
+            if query_resp.is_empty():
+                return
+            else:
+                res_lst = []
+                for recode in query_resp:
+                    res_lst.append(recode)
+                return len(res_lst)
+
+        except Exception as x:
+            print(x)
+            import traceback
+
+            print(traceback.format_exc())
+
 
 if __name__ == '__main__':
-    nebula_obj = NebulaClientDriver(space_name="libpqxx_test")
+    nebula_obj = NebulaClientDriver(space_name="boost_test2")
     nebula_obj.connect()
     # nebula_obj.create_vertex()
+    nebula_obj.find_node("boost/align.hpp")
     nebula_obj.close()
