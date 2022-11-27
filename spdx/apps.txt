@@ -1,0 +1,11 @@
+/Users/dzf/Downloads/AndroidSource
+/Users/dzf/Downloads/android
+/Users/dzf/Downloads/hawtio
+/Users/dzf/Downloads/dubbo
+/Users/dzf/Downloads/intellij-coverage
+/Users/dzf/Downloads/Java_app1
+/Users/dzf/Downloads/Java_app2
+/Users/dzf/Downloads/maven-master
+/Users/dzf/Downloads/xodus
+/Users/dzf/Downloads/guava
+/Users/dzf/Downloads/intellij-community-master
