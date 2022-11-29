@@ -1,4 +1,5 @@
-from uitl.neo4j_client import Neo4j_Client_Driver
+from util.neo4j_client import Neo4j_Client_Driver
+from util.nebula_process import NebulaClientDriver
 from file_analysis import *
 import time
 
@@ -124,16 +125,30 @@ def generate_nebula_graph(all_file_obj, lib_name, source_root, nebula_driver, li
 
 
 def file_analysis(lan, source_root, lib_name, search_library_lst, include_dir_lst, exclude_dir_lst, linux_true,
-                  nebula_space_name, l_len):
+                  nebula_space_name, l_len, visit_all_type, include_type):
     dependency_lib_files = set()
     lib_name = lan + "_" + "#" + lib_name
     time_start = time.time()
     nebula_driver = NebulaClientDriver(space_name=nebula_space_name)
     nebula_driver.connect()
+    file_infos = []
     print("Start visiting all files")
-    file_infos = visit_all_files2(source_root, linux_true, exclude_dir_lst)
+    if visit_all_type == 1:
+        file_infos = visit_all_files(source_root, linux_true, exclude_dir_lst)
+    elif visit_all_type == 2:
+        file_infos = visit_all_files2(source_root, linux_true, exclude_dir_lst)
+    else:
+        print("please enter the va_type!")
+        exit(1)
     print("Visited all files")
-    include_dir_files = visit_include_dir(include_dir_lst, source_root, linux_true)
+    include_dir_files = []
+    if include_type == 1:
+        include_dir_files = visit_include_dir(include_dir_lst, source_root, linux_true)
+    elif include_type == 2:
+        include_dir_files = visit_include_dir2(include_dir_lst, source_root, linux_true)
+    else:
+        print("please enter the include_type!")
+        exit(1)
     print("Visited all include files")
     print("Start analysing files")
     all_file_dic_obj = {}  # key:lib_name + file's name，value:FileInfo
@@ -179,83 +194,19 @@ def file_analysis(lan, source_root, lib_name, search_library_lst, include_dir_ls
 
 
 if __name__ == "__main__":
-    # C++ standard library，ues visit_all_files2
-    source_root_dir = "F:\lhh\py_test\llvm-project\libcxx"
-    library_name = "C++Std"
-    dependency_libraries = ["LINUX/include"]  # （vid）
-    include_dirs = ["include", "src/include"]
-    exclude_dirs = []
-
-    # boost
-    # source_root_dir = "F:\\lhh\\py_test\\boost"
-    # library_name = "boost"
-    # dependency_libraries = ["C++Std"]
-    # include_dirs = []
-    # exclude_dirs = ["doc", "stage", "status", "more"]
-
-    # libpqxx, use visit_all_files2 and visit_include_dir2
-    # source_root_dir = "F:\\lhh\\py_test\\libpqxx"
-    # library_name = "libpqxx"
-    # dependency_libraries = ["C++Std/include"]
-    # include_dirs = ["include"]
-    # exclude_dirs = ["tools", "config-tests"]
-
-    # cryptopp ,use visit_all_files
-    # source_root_dir = "F:\\lhh\\py_test\\cryptopp"
-    # library_name = "cryptopp"
-    # dependency_libraries = ["C++Std"]
-    # include_dirs = []
-    # exclude_dirs = ["TestPrograms"]
-
-    # inja, use visit_all_files
-    # source_root_dir = "F:\\lhh\\py_test\\inja"
-    # library_name = "inja"
-    # dependency_libraries = ["C++Std"]
-    # include_dirs = ["include", "third_party/include"]
-    # exclude_dirs = ["single_include"]
-
-    # bserv, use visit_all_files
-    # source_root_dir = "F:\\lhh\\py_test\\bserv"
-    # library_name = "bserv"
-    # dependency_libraries = ["C++Std", "boost", "libpqxx/include", "inja/include", "#"]
-    # include_dirs = ["bserv/include"]
-    # exclude_dirs = ["dependencies"]
-
-    # ASL, use visit_all_files
-    # source_root_dir = "F:\\lhh\\py_test\\ASL"
-    # library_name = "ASL"
-    # dependency_libraries = ["C++Std", "boost"]
-    # include_dirs = ["adobe"]
-    # exclude_dirs = ["documentation", "tools"]
 
     # small boost
     # source_root = "F:\\lhh\\py_test\\boost2"
     # include_search_dir_lst = []
     # library_name = "boost"
+    source_root_dir = ""
+    library_name = ""
+    dependency_libraries = []  # （vid）
+    include_dirs = []
+    exclude_dirs = []
+    v_a_type = 1
+    i_type = 1
 
-    # cryptopp
-    # source_root = "F:\\lhh\\bserv\\bserv-main\\dependencies\\cryptopp"
-    # include_search_dir_lst = []
-    # library_name = "cryptopp"
-
-    # libpq
-    # source_root = "F:\\lhh\\bserv\\bserv-main\\dependencies\\libpqxx"
-    # include_search_dir_lst = ["include"]
-    # library_name = "libpqxx"
-
-    # c standard
-    # source_root_dir = "F:\\lhh\\py_test\\glibc"
-    # library_name = "glibc"
-    # dependency_libraries = []
-    # include_dirs = ["include"]
-    # exclude_dirs = []
-
-    # linux
-    # source_root_dir = "F:\\lhh\\py_test\\linux-master"
-    # library_name = "LINUX"
-    # dependency_libraries = ["glibc/include"]
-    # include_dirs = ["include", "arch/x86/include"]
-    # exclude_dirs = []
 
     # neo4j config
     host = "bolt://localhost:7687"
@@ -268,9 +219,84 @@ if __name__ == "__main__":
     nebula_port = 9669
     nebula_user_name = "root"
     nebula_password = "nubula"
-    nebula_space = "AllProjects2"
+    nebula_space = "AllProjects"
     lst_len = 150
     language = "C"
 
+    print("1: glibc---C标准库")
+    print("2: linux---linux源代码库")
+    print("3: C++Std---C++标准库")
+    print("4: boost---boost源码库")
+    print("5: libpqxx---libpqxx源码库")
+    print("6: cryptopp---cryptopp源代码库")
+    print("7: inja---inja源代码库")
+    print("8: bserv---bserv源代码库")
+    print("9: ASL---ASL源代码库")
+    num = int(input("Please enter the project number which you want to choose(from 1 to 9):"))
+    if num == 1:
+        # c standard
+        source_root_dir = "F:\\lhh\\py_test\\glibc"
+        library_name = "glibc"
+        dependency_libraries = []
+        include_dirs = ["include"]
+        exclude_dirs = []
+    elif num == 2:
+        # linux
+        source_root_dir = "F:\\lhh\\py_test\\linux-master"
+        library_name = "LINUX"
+        dependency_libraries = ["glibc/include"]
+        include_dirs = ["include", "arch/x86/include"]
+        exclude_dirs = []
+    elif num == 3:
+        # C++ standard library，ues visit_all_files2
+        source_root_dir = "F:\\lhh\\py_test\\llvm-project\\libcxx"
+        library_name = "C++Std"
+        dependency_libraries = ["LINUX/include"]  # （vid）
+        include_dirs = ["include", "src/include"]
+        exclude_dirs = ["test"]
+        v_a_type = 2
+        i_type = 2
+    elif num == 4:
+        # boost
+        source_root_dir = "F:\\lhh\\py_test\\boost"
+        library_name = "boost"
+        dependency_libraries = ["C++Std/include"]
+        include_dirs = []
+        exclude_dirs = ["doc", "stage", "status", "more"]
+    elif num == 5:
+        # libpqxx, use visit_all_files2 and visit_include_dir2
+        source_root_dir = "F:\\lhh\\py_test\\libpqxx"
+        library_name = "libpqxx"
+        dependency_libraries = ["C++Std/include"]
+        include_dirs = ["include"]
+        exclude_dirs = ["tools", "config-tests"]
+    elif num == 6:
+        # cryptopp ,use visit_all_files
+        source_root_dir = "F:\\lhh\\py_test\\cryptopp"
+        library_name = "cryptopp"
+        dependency_libraries = ["C++Std/include"]
+        include_dirs = []
+        exclude_dirs = ["TestPrograms"]
+    elif num == 7:
+        #inja, use visit_all_files
+        source_root_dir = "F:\\lhh\\py_test\\inja"
+        library_name = "inja"
+        dependency_libraries = ["C++Std/include"]
+        include_dirs = ["include", "third_party/include"]
+        exclude_dirs = ["single_include"]
+    elif num == 8:
+        # bserv, use visit_all_files
+        source_root_dir = "F:\\lhh\\py_test\\bserv"
+        library_name = "bserv"
+        dependency_libraries = ["C++Std/include", "boost", "libpqxx/include", "inja/include", "#"]
+        include_dirs = ["bserv/include"]
+        exclude_dirs = ["dependencies"]
+    elif num == 9:
+        # ASL, use visit_all_files
+        source_root_dir = "F:\\lhh\\py_test\\ASL"
+        library_name = "ASL"
+        dependency_libraries = ["C++Std/include", "boost"]
+        include_dirs = ["adobe"]
+        exclude_dirs = ["documentation", "tools"]
     file_analysis(language, source_root_dir, library_name, dependency_libraries, include_dirs, exclude_dirs, linux,
-                  nebula_space, lst_len)
+                  nebula_space, lst_len, v_a_type, i_type)

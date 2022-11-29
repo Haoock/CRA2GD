@@ -2,9 +2,9 @@ import os
 import time
 import uuid
 
-from spdx.analysis_c import change_lin_path_to_win, change_win_path_to_linux
-from uitl.nebula_process import NebulaClientDriver
-from uitl.neo4j_client import Neo4j_Client_Driver
+from util.tools import change_lin_path_to_win, change_win_path_to_linux
+from util.nebula_process import NebulaClientDriver
+from util.neo4j_client import Neo4j_Client_Driver
 
 
 class java_file:

@@ -80,7 +80,7 @@ class NebulaClientDriver:
                 'match(v) where id(v) == "{}" return v;'.format(vid)
             )
             if not query_resp.is_succeeded():
-                print('Execute failed: %s' % query_resp.error_msg())
+                print('Nebula Execute failed: %s' % query_resp.error_msg())
                 exit(1)
             nebula_client.release()
             if query_resp.is_empty():

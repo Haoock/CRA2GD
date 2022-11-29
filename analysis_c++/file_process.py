@@ -1,14 +1,9 @@
 import os
 import re
 from object_class import FileInfo
+from util.tools import *
 
 
-def change_win_path_to_linux(win_path):
-    return '/'.join(win_path.split('\\'))
-
-
-def change_lin_path_to_win(lin_path):
-    return '\\'.join(lin_path.split('/'))
 
 
 # read every .c .C .cc .cxx .c++ .cpp .h .hpp .hxx file
@@ -153,16 +148,27 @@ def read_file_content(file_path, linux_true, num_lines=200):
         if not_include_line_num > num_lines:
             break
         line = line.strip()
+        if line.startswith("//"):
+            line = f.readline()
+            continue
         res_lst1 = re.compile('#\s*include\s*["](.*?)["]').findall(line)
         res_lst2 = re.compile('#\s*include\s*[<](.*?)[>]').findall(line)
         if len(res_lst1) != 0 or len(res_lst2) != 0:
             not_include_line_num = 0
             if len(res_lst1) == 1:
-                rel_files_name.append(res_lst1[0])
+                file_name_temp = res_lst1[0]
+                file_name_temp = file_name_temp.strip()
+                if len(file_name_temp) != 0 and file_name_temp[0].encode('utf-8').isalpha() and "<<" not in file_name_temp:
+                    rel_files_name.append(res_lst1[0])
             elif len(res_lst2) == 1:
-                sys_files_name.append(res_lst2[0])
+                file_name_temp = res_lst2[0]
+                file_name_temp = file_name_temp.strip()
+                if len(file_name_temp) != 0 and file_name_temp[0].encode('utf-8').isalpha() and "<<" not in file_name_temp:
+                    sys_files_name.append(res_lst2[0])
             else:
-                print("include部分分析错误！！！")
+                print("一行中包含多个include部分")
+                print(res_lst2)
+                print(res_lst1)
         elif len(line) != 0:
             not_include_line_num += 1
         line = f.readline()
