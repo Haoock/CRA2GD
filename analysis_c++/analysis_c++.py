@@ -24,30 +24,27 @@ def generate_neo4j_graph(all_file_obj):
     print("time cost:", time_end2 - time_end, 's')
 
 
-def process_file_vertex_data(vid, file_name, full_path):
-    return "'{}':('{}','{}'), ".format(vid, file_name, full_path)
+def process_file_vertex_data(vid, file_name):
+    return "'{}':('{}'), ".format(vid, file_name)
 
 
-def process_package_vertex_data(vid):
-    return "'{}':(), ".format(vid)
+def process_package_vertex_data(vid, pkg_name):
+    return "'{}':('{}'), ".format(vid, pkg_name)
 
 
-def process_library_vertex_data(vid, full_path):
-    return "'{}':('{}');".format(vid, full_path)
+def process_library_vertex_data(vid, lib_name):
+    return "'{}':('{}');".format(vid, lib_name)
 
 
-def process_edge_data(src_vid, dst_vid):
-    return "'{}'->'{}':(), ".format(src_vid, dst_vid)
+def process_edge_data(src_vid, dst_vid, e_type):
+    return "'{}'->'{}':('{}'), ".format(src_vid, dst_vid, e_type)
 
 
-def create_include_relationship(nebula_driver, all_file_obj):
+def create_include_relationship(nebula_driver, all_file_obj, l_len):
     all_files = []
     for k, v in all_file_obj.items():
-        if not v.is_user_file:
-            all_files.append(process_file_vertex_data(k, os.path.basename(k), ""))
-        elif v.is_user_file:
-            all_files.append(process_file_vertex_data(k, os.path.basename(k), v.file_full_path))
-        if len(all_files) == 50:
+        all_files.append(process_file_vertex_data(k, os.path.basename(k)))
+        if len(all_files) == l_len:
             all_files[-1] = all_files[-1][:-2] + ";"
             nebula_driver.create_vertex("File", ''.join(all_files))
             all_files.clear()
@@ -59,17 +56,17 @@ def create_include_relationship(nebula_driver, all_file_obj):
     edge_lst = []
     for k, v in all_file_obj.items():
         for include_file in v.include_name:
-            edge_lst.append(process_edge_data(k, include_file))
-            if len(edge_lst) == 50:
+            edge_lst.append(process_edge_data(k, include_file, "Include"))
+            if len(edge_lst) == l_len:
                 edge_lst[-1] = edge_lst[-1][:-2] + ";"
-                nebula_driver.create_edge("Include", ''.join(edge_lst))
+                nebula_driver.create_edge(''.join(edge_lst))
                 edge_lst.clear()
     if len(edge_lst) != 0:
         edge_lst[-1] = edge_lst[-1][:-2] + ";"
-        nebula_driver.create_edge("Include", ''.join(edge_lst))
+        nebula_driver.create_edge(''.join(edge_lst))
 
 
-def create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_root, linux_true):
+def create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_root, linux_true, l_len):
     all_package_obj = {lib_name: list()}
     for k, v in all_file_obj.items():
         while not k == os.path.dirname(k):
@@ -90,12 +87,12 @@ def create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_r
     # create package and Library
     if not linux_true:
         source_root = change_win_path_to_linux(source_root)
-    nebula_driver.create_vertex("Library", process_library_vertex_data(lib_name, source_root))
+    nebula_driver.create_vertex("Library", process_library_vertex_data(lib_name, lib_name[3:]))
     all_packages = []
     for k, v in all_package_obj.items():
         if k != lib_name:
-            all_packages.append(process_package_vertex_data(k))
-        if len(all_packages) == 50:
+            all_packages.append(process_package_vertex_data(k, os.path.basename(k)))
+        if len(all_packages) == l_len:
             all_packages[-1] = all_packages[-1][:-2] + ";"
             nebula_driver.create_vertex("Package", ''.join(all_packages))
             all_packages.clear()
@@ -107,33 +104,34 @@ def create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_r
     edge_lst = []
     for k, v in all_package_obj.items():
         for pkg_or_file in v:
-            edge_lst.append(process_edge_data(k, pkg_or_file))
-            if len(edge_lst) == 50:
+            edge_lst.append(process_edge_data(k, pkg_or_file, "Contain"))
+            if len(edge_lst) == l_len:
                 edge_lst[-1] = edge_lst[-1][:-2] + ";"
-                nebula_driver.create_edge("Contain", ''.join(edge_lst))
+                nebula_driver.create_edge(''.join(edge_lst))
                 edge_lst.clear()
     if len(edge_lst) != 0:
         edge_lst[-1] = edge_lst[-1][:-2] + ";"
-        nebula_driver.create_edge("Contain", ''.join(edge_lst))
+        nebula_driver.create_edge(''.join(edge_lst))
 
 
-def generate_nebula_graph(all_file_obj, lib_name, source_root, nebula_driver, linux_true):
+def generate_nebula_graph(all_file_obj, lib_name, source_root, nebula_driver, linux_true, l_len):
     print("Create include nodes and relationship")
-    create_include_relationship(nebula_driver, all_file_obj)
+    create_include_relationship(nebula_driver, all_file_obj, l_len)
     print("Include finish")
     print("Create contain nodes and relationship")
-    create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_root, linux_true)
+    create_contains_relationship(nebula_driver, all_file_obj, lib_name, source_root, linux_true, l_len)
     print("Contain finish")
 
 
-def file_analysis(source_root, lib_name, search_library_lst, include_dir_lst, exclude_dir_lst, linux_true,
-                  nebula_space_name):
+def file_analysis(lan, source_root, lib_name, search_library_lst, include_dir_lst, exclude_dir_lst, linux_true,
+                  nebula_space_name, l_len):
     dependency_lib_files = set()
-    lib_name = "#" + lib_name
+    lib_name = lan + "_" + "#" + lib_name
     time_start = time.time()
     nebula_driver = NebulaClientDriver(space_name=nebula_space_name)
     nebula_driver.connect()
-    file_infos = visit_all_files(source_root, linux_true, exclude_dir_lst)
+    print("Start visiting all files")
+    file_infos = visit_all_files2(source_root, linux_true, exclude_dir_lst)
     print("Visited all files")
     include_dir_files = visit_include_dir(include_dir_lst, source_root, linux_true)
     print("Visited all include files")
@@ -158,9 +156,9 @@ def file_analysis(source_root, lib_name, search_library_lst, include_dir_lst, ex
 
     print("analysing rel_include and sys_include!")
     for file_info in file_infos:
-        print(file_info.file_full_path)
+        # print(file_info.file_full_path)
         analysis_rel_include_content(file_info, all_file_dic_obj, source_root, linux_true, lib_name)
-        analysis_sys_include_content(file_info, all_file_dic_obj, source_root, include_dir_files, search_library_lst,
+        analysis_sys_include_content(lan, file_info, all_file_dic_obj, source_root, include_dir_files, search_library_lst,
                                      linux_true, nebula_driver, lib_name, dependency_lib_files)
     time_end = time.time()
     print("time cost:", time_end - time_start, 's')
@@ -174,7 +172,7 @@ def file_analysis(source_root, lib_name, search_library_lst, include_dir_lst, ex
     #     print(v.include_name)
 
     # # generate_neo4j_graph(all_file_dic_obj)
-    generate_nebula_graph(all_file_dic_obj, lib_name, source_root, nebula_driver, linux_true)
+    generate_nebula_graph(all_file_dic_obj, lib_name, source_root, nebula_driver, linux_true, l_len)
     nebula_driver.close()
     time_end2 = time.time()
     print("total time cost：", time_end2 - time_start, 's')
@@ -182,12 +180,11 @@ def file_analysis(source_root, lib_name, search_library_lst, include_dir_lst, ex
 
 if __name__ == "__main__":
     # C++ standard library，ues visit_all_files2
-    # source_root_dir = "C:\\Program Files (x86)\\Microsoft Visual " \
-    #                   "Studio\\2019\\Community\\VC\\Tools\\MSVC\\14.29.30133\\include"
-    # library_name = "C++Std"
-    # dependency_libraries = []  # （vid）
-    # include_dirs = []
-    # exclude_dirs = []
+    source_root_dir = "F:\lhh\py_test\llvm-project\libcxx"
+    library_name = "C++Std"
+    dependency_libraries = ["LINUX/include"]  # （vid）
+    include_dirs = ["include", "src/include"]
+    exclude_dirs = []
 
     # boost
     # source_root_dir = "F:\\lhh\\py_test\\boost"
@@ -199,7 +196,7 @@ if __name__ == "__main__":
     # libpqxx, use visit_all_files2 and visit_include_dir2
     # source_root_dir = "F:\\lhh\\py_test\\libpqxx"
     # library_name = "libpqxx"
-    # dependency_libraries = ["C++Std"]
+    # dependency_libraries = ["C++Std/include"]
     # include_dirs = ["include"]
     # exclude_dirs = ["tools", "config-tests"]
 
@@ -254,12 +251,11 @@ if __name__ == "__main__":
     # exclude_dirs = []
 
     # linux
-    source_root_dir = "F:\\lhh\\py_test\\linux-master"
-    library_name = "LINUX"
-    dependency_libraries = ["glibc/include"]
-    # dependency_libraries = []
-    include_dirs = ["include", "arch/x86/include"]
-    exclude_dirs = []
+    # source_root_dir = "F:\\lhh\\py_test\\linux-master"
+    # library_name = "LINUX"
+    # dependency_libraries = ["glibc/include"]
+    # include_dirs = ["include", "arch/x86/include"]
+    # exclude_dirs = []
 
     # neo4j config
     host = "bolt://localhost:7687"
@@ -272,7 +268,9 @@ if __name__ == "__main__":
     nebula_port = 9669
     nebula_user_name = "root"
     nebula_password = "nubula"
-    nebula_space = "C_Plus_Projects"
+    nebula_space = "AllProjects2"
+    lst_len = 150
+    language = "C"
 
-    file_analysis(source_root_dir, library_name, dependency_libraries, include_dirs, exclude_dirs, linux,
-                  nebula_space)
+    file_analysis(language, source_root_dir, library_name, dependency_libraries, include_dirs, exclude_dirs, linux,
+                  nebula_space, lst_len)

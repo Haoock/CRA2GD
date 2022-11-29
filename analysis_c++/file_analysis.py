@@ -59,12 +59,12 @@ def search_include_file(content, source_root, include_dir_files, linux_true):
     return False, ""
 
 
-def search_library_file(file, search_library_lst, nebula_driver, dependency_lib_files):
+def search_library_file(lan, file, search_library_lst, nebula_driver, dependency_lib_files):
     for library in search_library_lst:
         if library == "#":
-            file_name = library + file
+            file_name = lan + "_" + library + file
         else:
-            library_name = "#" + library
+            library_name = lan + "_" + "#" + library
             file_name = add_library_name(library_name, file)  # file's vid
         if file_name in dependency_lib_files:
             return True, file_name
@@ -77,7 +77,7 @@ def search_library_file(file, search_library_lst, nebula_driver, dependency_lib_
 
 
 # analysis #include<> content ，also include #include"" 's content
-def analysis_sys_include_content(file_obj, all_file_dic_obj, source_root, include_dir_files, search_library_lst,
+def analysis_sys_include_content(lan, file_obj, all_file_dic_obj, source_root, include_dir_files, search_library_lst,
                                  linux_true, nebula_driver, lib_name, dependency_lib_files):
     for content in file_obj.sys_include_files:
         content_temp = add_library_name(lib_name, content)
@@ -91,7 +91,7 @@ def analysis_sys_include_content(file_obj, all_file_dic_obj, source_root, includ
                     file_obj.include_name.add(add_library_name(lib_name, res_content))
                     continue
             if len(search_library_lst) != 0:
-                res2, res_content2 = search_library_file(content, search_library_lst, nebula_driver, dependency_lib_files)
+                res2, res_content2 = search_library_file(lan, content, search_library_lst, nebula_driver, dependency_lib_files)
                 if res2:
                     file_obj.include_name.add(res_content2)
                     continue

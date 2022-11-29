@@ -29,16 +29,19 @@ class NebulaClientDriver:
             nebula_client.execute('USE {}'.format(self.space_name))
             if v_type == "File":
                 nebula_client.execute(
-                    'INSERT VERTEX {}(file_name, full_path) VALUES '.format(v_type) + data
+                    'INSERT VERTEX {}(file_name) VALUES '.format(v_type) + data
                 )
+                # print('INSERT VERTEX {}(file_name) VALUES '.format(v_type) + data)
             elif v_type == "Package":
                 nebula_client.execute(
-                    'INSERT VERTEX {}() VALUES '.format(v_type) + data
+                    'INSERT VERTEX {}(pkg_name) VALUES '.format(v_type) + data
                 )
+                # print('INSERT VERTEX {}(pkg_name) VALUES '.format(v_type) + data)
             elif v_type == "Library":
                 nebula_client.execute(
-                    'INSERT VERTEX {}(full_path) VALUES '.format(v_type) + data
+                    'INSERT VERTEX {}(lib_name) VALUES '.format(v_type) + data
                 )
+                # print('INSERT VERTEX {}(lib_name) VALUES '.format(v_type) + data)
             nebula_client.release()
 
         except Exception as x:
@@ -47,20 +50,14 @@ class NebulaClientDriver:
 
             print(traceback.format_exc())
 
-    def create_edge(self, e_type, data):
+    def create_edge(self, data):
         try:
             nebula_client = self.connection_pool.get_session(self.user_name, self.password)
             assert nebula_client is not None
-            if e_type == "Include":
-                nebula_client.execute('USE {}'.format(self.space_name))
-                nebula_client.execute(
-                    'INSERT EDGE Include() VALUES ' + data
-                )
-            elif e_type == "Contain":
-                nebula_client.execute('USE {}'.format(self.space_name))
-                nebula_client.execute(
-                    'INSERT EDGE Contain() VALUES ' + data
-                )
+            nebula_client.execute('USE {}'.format(self.space_name))
+            nebula_client.execute(
+                'INSERT EDGE Relationship(RelationType) VALUES ' + data
+            )
             nebula_client.release()
 
         except Exception as x:
