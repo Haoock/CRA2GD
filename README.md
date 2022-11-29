@@ -1,6 +1,6 @@
 # CRA2GD
 
-This is a project for C or C++ include relationship analysis to graph databses such as neo4j or nebula.
+This is a project for C or C++ and java relationship analysis to graph databses such as neo4j or nebula.
 
 # spdx generation
 
